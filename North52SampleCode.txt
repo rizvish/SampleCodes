@@ -1,0 +1,137 @@
+/*Runs against transaction records grabbed via FetchXML to parse & populate fields and create openlane records*/ 
+ 
+ SmartFlow(    
+   
+        /*Setting Variables*/
+        SetVar('VehicleGUID', [new_transaction.new_vehicle]),
+        SetVar('LocationName', [new_transaction.new_locationname]),
+        SetVar('VIN', FindValue('new_vehicle', 'new_vehicleid', GetVar('VehicleGUID'), 'new_vin')),
+   	    SetVar('TransactionCreatedOn', [new_transaction.createdon]),
+   
+        SetVar('Month', GetMonth(GetVar('TransactionCreatedOn'))),  
+        SetVar('Day', GetDay(GetVar('TransactionCreatedOn'))), 																																		  		             
+        SetVar('Year', GetYear(GetVar('TransactionCreatedOn'))),
+        SetVar('TransactionCreatedOnFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + ToString(GetVar('Year'))),
+                               
+                    /*Queries FetchXML to find the grab the first record available by order ascending. Returns GUID of record if it exists for the query, else returns 'Not Found'*/                      
+					SetVar('TEGUID', FindValueFD('FetchXML', 'new_transactioneventid', 'Not Found', true, SetParams([new_transaction.new_transactionid]))),
+					
+					/*If record is found, then parse, populate, and create related OL records*/
+   					iftrue(ToString(GetVar('TEGUID')) != 'Not Found',
+                          SmartFlow(
+                            	        /*Parses and formats date values to as MM/DD/YYYY*/
+                            	         
+										SetVar('CompletedOrReconciled', FindValue('new_transactionevent', 'new_transactioneventid', GetVar('TEGUID'), 																										      								  
+										'new_lasteventstatusname'
+                                          								          )
+                                               ),
+                                      	if(GetVar('CompletedOrReconciled') = 'Reconciled' or
+                                           GetVar('CompletedOrReconciled') = 'Completed',
+                                          					SetVar('TE_SecuredDate', FindValue('new_transactionevent', 'new_transactioneventid', GetVar('TEGUID'), 																										      								   
+                                          					'new_lasteventstatuschangedate', 'No Date'
+                                          								                   )
+                                               					   ),
+                                          				    SetVar('TE_SecuredDate', 'No Date')
+                                           ),
+
+                                        iftrue(GetVar('TE_SecuredDate') != 'No Date',
+                                                                                      SetVar('Month', GetMonth(GetVar('TE_SecuredDate'))),  																																		 			      
+                                                                                      SetVar('Day', GetDay(GetVar('TE_SecuredDate'))), 																																		  			            
+                                                                                      SetVar('Year', GetYear(GetVar('TE_SecuredDate'))),
+                                                                                      SetVar('SecuredDateFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + 																																			   
+                                                                                      							  ToString(GetVar('Year'))
+                                                                                      		)
+                                                                                 ),
+                                         SetVar('TE_DispatchDate', FindValue('new_transactionevent', 'new_transactioneventid', GetVar('TEGUID'), 																												  							 
+                                          'new_dispatchdate', 'No Date'
+                                           									)
+                                               ),
+                                                                         iftrue(GetVar('TE_DispatchDate') != 'No Date',
+                                                                                       SetVar('Month', GetMonth(GetVar('TE_DispatchDate'))),  																																		 			      
+                                                                                        SetVar('Day', GetDay(GetVar('TE_DispatchDate'))), 																																		  			           
+                                                                                       SetVar('Year', GetYear(GetVar('TE_DispatchDate'))),
+                                                                                       SetVar('DispatchDateFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + 																																			   
+                                                                                       					            ToString(GetVar('Year'))
+                                                                           					 )
+                                                                                ),
+                                                                          if([new_transaction.new_statusglobalname] = 'Sold',
+                                                                            	SmartFlow(
+                                            											SetVar('SoldDate', GetDateOnly([new_transaction.new_sold])),
+                                                                                        SetVar('Month', GetMonth(GetVar('SoldDate'))),  																																		 			            
+                                                                                        SetVar('Day', GetDay(GetVar('SoldDate'))), 																																		  			                    
+                                                                                        SetVar('Year', GetYear(GetVar('SoldDate'))),
+                                                                                        SetVar('SoldDateFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + 																																			     
+                                                                                       						     ToString(GetVar('Year'))
+                                                                                      		  )
+                                                                                      	   ),
+                                             									 SetVar('SoldDate', '')
+  											 								),     
+  											 								/*Queries for Openlane records. Ran against the current transaction record*/
+                                                                           SetVar('OLGUID', FindValue('new_openlaneinventory', SetFindAnd('new_transaction', 'new_vehicle'), 																																								   
+                                                                           SetFindAnd([new_transaction.new_transactionid], 																																											  
+                                                                           [new_transaction.new_vehicle]), 
+                                                                                        												  'new_openlaneinventoryid', 																																												 	  
+                                                                                        												  'Not Found')
+                                                                           		 ),
+                                                                           		 
+                                        /*If Openlane record DNE, then create it*/                                		 
+                            			iftrue(ToString(GetVar('OLGUID')) = 'Not Found', 
+                           					SmartFlow(
+   	                                 	 	    SetVar('OL_GUID', CreateRecord('new_openlaneinventory', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
+                                                                                                 	    SetAttribute('new_auction_id', '411755'), 
+                                                                                                  		SetAttribute('new_vin', GetVar('VIN')),                                          								      							 																   
+                                                                                                  		SetAttributeLookup('new_eventstatustype', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
+                                                                                               		    SetAttribute('new_location_city', GetVar('LocationName')),
+                                                                                                 	    SetAttribute('new_transaction', [new_transaction.new_transactionid]),
+                                                                                                 	    SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID')),
+                                            													  	    SetAttribute('new_vehicle_status', [new_transaction.new_statusglobalname]),
+                                            													 	    SetAttribute('new_date_record_was_created_in_onlane', GetVar('TransactionCreatedOnFormat')),
+                                                                                        		  		SetAttribute('new_assign_date', GetVar('TransactionCreatedOnFormat')),
+                                            													 		SetAttribute('new_consignment_received_or_updated', GetVar('TransactionCreatedOnFormat')),
+                                             													  		SetAttribute('new_secured_date', GetVar('SecuredDateFormat')),
+                                            													  		SetAttribute('new_date_shipped', GetVar('DispatchDateFormat')),
+                                            													  		SetAttribute('new_sold_date', GetVar('SoldDateFormat'))
+                                          										)
+                                          	    		),
+                                   
+                                          		SetVar('OL_Equipment', CreateRecord('new_openlaneequipment', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
+                                                                                                        	 SetAttribute('new_auction_id', '411755'),
+                                                                           									 SetAttribute('new_vin', GetVar('VIN')),
+                                                                                                       	     SetAttributeLookup('new_openlane_inventory', 'new_openlaneinventory', GetVar('OL_GUID')),
+                                                                                                  	    	 SetAttributeLookup('new_event_status_type', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
+                                            																 SetAttributeLookup('new_transaction', 'new_transaction', [new_transaction.new_transactionid]), 
+                                                                                                 	    	 SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID'))
+                                                                             		 )
+                                         				 ), 
+		
+                                          		SetVar('OL_Details', CreateRecord('new_openlanedetails', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
+                                                                                                         SetAttribute('new_auction_id', '411755'),
+                                                                            							 SetAttribute('new_vin', GetVar('VIN')),
+                                                                                                         SetAttributeLookup('new_openlane_inventory', 'new_openlaneinventory', GetVar('OL_GUID')),
+                                                                                                         SetAttributeLookup('new_event_status_type', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
+                                            															 SetAttributeLookup('new_transaction', 'new_transaction', [new_transaction.new_transactionid]),
+                                                                                                 	     SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID'))
+                                                                         		   )
+                                          				),
+
+                                          		SetVar('OL_PictureURL', CreateRecord('new_carlotz_pictureurl', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
+                                                                                                    	       SetAttribute('new_auction_id', '411755'),
+                                                                            								   SetAttribute('new_vin', GetVar('VIN')),
+                                                                                                        	   SetAttributeLookup('new_open_lane_inventory', 'new_openlaneinventory', GetVar('OL_GUID')),
+                                                                                                       		   SetAttributeLookup('new_event_status_type', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
+                                           																	   SetAttributeLookup('new_transaction', 'new_transaction', [new_transaction.new_transactionid]),
+                                                                                                    		   SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID'))
+                                                                                     )  	
+                                            
+												  	), 
+                                   
+                                       		    UpdateRecord('new_openlaneinventory', GetVar('OL_GUID'), SetAttributeLookup('new_openlane_equipment', 'new_openlaneequipment', GetVar('OL_Equipment')), 
+                                                                                                 		 SetAttributeLookup('new_openlane_details', 'new_openlanedetails', GetVar('OL_Details')), 
+                                                                                               		     SetAttributeLookup('new_picture_url', 'new_carlotz_pictureurl', GetVar('OL_PictureURL'))/*,
+                                          											            		 SetAttribute('new_triggerreason', '100000001') SYNC Transaction*/
+                         	 								)
+                                                   )
+                                              )
+                                         )
+                                  	)
+          )
