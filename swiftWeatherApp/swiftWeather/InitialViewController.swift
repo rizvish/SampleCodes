@@ -71,7 +71,7 @@ class InitialViewController: UIViewController, CLLocationManagerDelegate {
         let currentLatitude = roundDouble(roundTwo: Double(loadlocation.latitude))
         let currentLongitude = roundDouble(roundTwo: Double(loadlocation.longitude))
 
-        if(previousLatitude != currentLatitude && previousLongitude != currentLongitude)
+        if(previousLatitude != currentLatitude || previousLongitude != currentLongitude)
         {
        Weather.forecast(withLocation: loadlocation, completion: { (results:[Weather]?) in
             
