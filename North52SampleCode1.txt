@@ -1,0 +1,158 @@
+/* Activates when Service Severity Code changes, necessary part when sending the CR Detail codes.
+*/
+
+/* Formula only executes when Service Severity Codee and Condition Report fields contain data */
+iftrue(ContainsData([new_conditionreportdetail.new_serviceseveritycode], [new_conditionreportdetail.new_conditionreport]),
+       SmartFlow
+  	   (
+         /* Initialize error statement */
+         SetVar('ErrorStart', 'The following fields are missing from the Condition Report: '),
+         SetVar('ErrorItems', ''),
+         
+         /* Build error statement based on missing fields */
+         if(DoesNotContainData([new_conditionreportdetail.new_conditionreport.new_vehicle.?]),
+            SetVarConcat('ErrorItems', 'Vehicle (on CR record)'),
+            SmartFlow(
+                      iftrue(DoesNotContainData([new_conditionreportdetail.new_conditionreport.new_vehicle.new_vin.?]),
+                             SetVarConcat('ErrorItems', 'VIN (on CR Vehicle record), ')
+                            ),
+
+                      iftrue(DoesNotContainData([new_conditionreportdetail.new_conditionreport.new_vehicle.new_year.?]),
+                             SetVarConcat('ErrorItems', 'Year (on CR Vehicle record), ')
+                            ),
+
+                      iftrue(DoesNotContainData([new_conditionreportdetail.new_conditionreport.new_vehicle.new_autoimsbodystylecode.?]),
+                             SetVarConcat('ErrorItems', 'AutoIMS BodyStyle (on CR Vehicle record), ')
+                            )
+            )
+           ),
+
+         /* Output error message if variable 'ErrorItems' has a value, else continue to execute AutoGrade API */  
+         if(GetVar('ErrorItems') = '',
+            SmartFlow(
+               /* Get GUID for Tire CR Detail */
+               SetVar('CRTireGUID', FindValue('new_conditionreportdetail', SetFindAnd('new_conditionreport', 'new_servicesnotes', 'statecode'), 
+                                                                           SetFindAnd([new_conditionreportdetail.new_conditionreport], 'TIRES', 0),
+                                                                           'new_conditionreportdetailid',
+                                                                           'NOT FOUND'
+                                             )
+                     ),
+               iftrue(Upper(GetVar('CRTireGUID')) != 'NOT FOUND',
+                      SmartFlow(
+					  /* Set values Tire treads  */
+                      SetVar('LFTire', FindValue('new_conditionreportdetail', 'new_conditionreportdetailid', GetVar('CRTireGUID'), 'new_lf', 'NOT FOUND')),
+
+                      SetVar('RFTire', FindValue('new_conditionreportdetail', 'new_conditionreportdetailid', GetVar('CRTireGUID'), 'new_rf', 'NOT FOUND')),
+
+                      SetVar('LRTire', FindValue('new_conditionreportdetail', 'new_conditionreportdetailid', GetVar('CRTireGUID'), 'new_lr', 'NOT FOUND')),
+
+                      SetVar('RRTire', FindValue('new_conditionreportdetail', 'new_conditionreportdetailid', GetVar('CRTireGUID'), 'new_rr', 'NOT FOUND')),  
+
+                      /* If Tire Treads are not empty or do not equal '-' */
+                      if(Upper(GetVar('LFTire')) != 'NOT FOUND' and 
+                             Upper(GetVar('RFTire')) != 'NOT FOUND' and
+                             Upper(GetVar('LRTire')) != 'NOT FOUND' and
+                             Upper(GetVar('RRTire')) != 'NOT FOUND' and
+                             Upper(GetVar('LFTire')) != '100000006' /* - */ and 
+                             Upper(GetVar('RFTire')) != '100000006' and
+                             Upper(GetVar('LRTire')) != '100000006' and
+                             Upper(GetVar('RRTire')) != '100000006',
+                             SmartFlow(
+
+                            /* Currently looks at the Vehicle record on the parent CR record to get the Year/Trim 
+                               To get the tire tread values, looks at the 1st digit of the tire optionset values (fields on in TestLotz for now)
+                       Spare tire information is optional
+                            */
+                            SetVar('RequestBody', 
+                                   '<ConditionReport>' +
+                                   '<VIN>' + [new_conditionreportdetail.new_conditionreport.new_vehicle.new_vin.?] +'</VIN>' +
+                                   '<RequestTrackingID></RequestTrackingID>' +
+                                   '<ModelYear>' + [new_conditionreportdetail.new_conditionreport.new_vehicle.new_year.?] + '</ModelYear>' +
+                                   '<BodyStyle>' + [new_conditionreportdetail.new_conditionreport.new_vehicle.new_autoimsbodystylecode.?] + '</BodyStyle>' +
+                                   '<TireTreadDepth>' +
+                                   '<LeftFront>' + Left(GetOptionSetName('new_conditionreportdetail.new_lf', GetVar('LFTire')), 1) + '</LeftFront>' + 
+                                   '<RightFront>' + Left(GetOptionSetName('new_conditionreportdetail.new_rf', GetVar('RFTire')), 1) + '</RightFront>' +
+                                   '<LeftRear>' + Left(GetOptionSetName('new_conditionreportdetail.new_lr', GetVar('LRTire')), 1) + '</LeftRear>' +
+                                   '<RightRear>' + Left(GetOptionSetName('new_conditionreportdetail.new_rr', GetVar('RRTire')), 1) + '</RightRear>' +
+                                   '<Spare></Spare>' +
+                                   '</TireTreadDepth>' +
+                                   '<Driveable>true</Driveable>' +
+                                   '<Flags/>' 
+                                  ),
+
+                            /*Loops through all related CR Details based on the current CR record to create query. Concats Detail codes for each record found.*/ 
+                            ForEachRecord(FindRecordsFD('All Related Condition Report Details with Severity Codes'), 
+                                          SmartFlow(
+                                                    SetVarConcat('RequestBody', 
+                                                                 '<Damage>' +
+                                                                 '<AASCItemCode>' + CurrentRecord('new_serviceitemcode') + '</AASCItemCode>' +
+                                                                 '<AASCDamageCode>' + CurrentRecord('new_servicedamagecode') + '</AASCDamageCode>' +
+                                                                 '<AASCSeverityCode>' + CurrentRecord('new_serviceseveritycode') + '</AASCSeverityCode>' +
+                                                                 '</Damage>'
+                                                                )
+                                          )
+                                         ),
+
+                            /* Close off with CR end tag */ 
+                            SetVarConcat('RequestBody', '</ConditionReport>'),
+
+                            /* Update CR Detail with Request Body text for testing */ 
+                            /*UpdateRecord('new_conditionreportdetail', [new_conditionreportdetail.new_conditionreportdetailid], SetAttribute('new_crcomments', GetVar('RequestBody'))),*/
+
+                            CallRestAPI( 
+                                        SetRequestBaseURL('http://samplecode.com/'),
+                                        SetRequestResource(''),
+                                        SetRequestDetails('POST'),
+                                        SetRequestHeaders(),
+                                        SetRequestParams('data', GetVar('RequestBody')),
+                                        SetRequestAuthenticationNone(),
+                                        SetRequestFiles(), 
+                                        SetRequestExpected('OK'),  
+                                        SmartFlow(
+                                                    /*SetVar('AutoGradeOutput', Slice(GetVar('responsecontent'), 21, 24)),*/
+                                                    SetVar('AutoGradeOutput',StripHtml(GetVar('responsecontent'))),
+                                                    SetVar('AutoGradeOutput',RegexReplace(GetVar('AutoGradeOutput'), «\\n», '')),
+                                                    SetVar('AutoGradeOutput',RegexReplace(GetVar('AutoGradeOutput'), «\\r», '')),
+                                          			SetVar('AutoGradeOutput',RegexReplace(GetVar('AutoGradeOutput'), «"», '')),
+
+                                                    UpdateRecord('new_conditionreport', [new_conditionreportdetail.new_conditionreport], 
+                                                      SetAttribute('new_autograde', GetVar('AutoGradeOutput')),
+                                                      SetAttribute('new_autogradeerror', Clear())
+                                                    )
+                                        ),
+                              			SmartFlow(
+                                                    /*SetVar('AutoGradeOutput', GetVar('responsecontent')),*/
+                                                    SetVar('AutoGradeOutput',StripHtml(GetVar('responsecontent'))),
+                                                    SetVar('AutoGradeOutput',RegexReplace(GetVar('AutoGradeOutput'), «\\n», '')),
+                                                    SetVar('AutoGradeOutput',RegexReplace(GetVar('AutoGradeOutput'), «\\r», '')),
+                                          			SetVar('AutoGradeOutput',RegexReplace(GetVar('AutoGradeOutput'), «"», '')),
+
+                                                    UpdateRecord('new_conditionreport', [new_conditionreportdetail.new_conditionreport], 
+                                                      SetAttribute('new_autograde', Clear()),
+                                                      SetAttribute('new_autogradeerror', 
+                                                        		   'AutoGrade API failed with error: ' + GetVar('AutoGradeOutput')
+                                                      			  )
+                                                    )
+                                        )
+                                       )
+                               ),
+                 	
+                 		UpdateRecord('new_conditionreport', [new_conditionreportdetail.new_conditionreport], 
+                          							  SetAttribute('new_autograde', Clear()),
+                                                      SetAttribute('new_autogradeerror', 
+                                                        'Tires aint got no tread info'
+                                                      )
+                                                    )
+                        )
+                      )
+                 )
+              ),
+           UpdateRecord('new_conditionreport', [new_conditionreportdetail.new_conditionreport], SetAttribute('new_autograde', Clear()),
+             																				    SetAttribute('new_autogradeerror',
+                                                                                                             GetVar('ErrorStart') + ReplaceLastOccurrence(GetVar('ErrorItems'), ',', '')
+                                                                                                            )
+             		   )
+           )
+  	   )
+
+      )
