@@ -1,0 +1,92 @@
+//
+//  WeatherTableViewController.swift
+//  swiftWeather
+//
+//  Created by Syed Hyder Rizvi on 7/4/17.
+//  Copyright © 2017 Syed Hyder Rizvi. All rights reserved.
+//
+
+import UIKit
+import CoreLocation
+
+class WeatherTableViewController: UITableViewController {
+    
+    var locValue:CLLocationCoordinate2D? = nil
+    var locationNow: String? = nil
+    var forecastData = [Weather]()
+    
+    var tempArray: [Double] = []
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        updateWeatherForLocation(location: "New York")
+
+        
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        navigationItem.title = locationNow
+
+    }
+    
+    @IBAction func unwindSegueW(_ sender: Any) {
+        performSegue(withIdentifier: "unwindW", sender: self)
+
+    }
+    func updateWeatherForLocation (location:String) {
+        CLGeocoder().geocodeAddressString(location) { (placemarks:[CLPlacemark]?, error:Error?) in
+            if error == nil {
+                if (placemarks?.first?.location) != nil {
+                    Weather.forecast(withLocation: self.locValue!, completion: { (results:[Weather]?) in
+                        
+                        if let weatherData = results {
+                            self.forecastData = weatherData
+                            
+                            DispatchQueue.main.async {
+                                self.tableView.reloadData()
+                                    }
+                            
+                        }
+                        
+                    })
+                }
+            }
+        }
+    }
+    
+
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        return forecastData.count
+    }
+    
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return 1
+    }
+    
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        let date = Calendar.current.date(byAdding: .day, value: section, to: Date())
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMMM dd, yyyy"
+        
+        return dateFormatter.string(from: date!)
+    }
+    
+
+    
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath) as! myTableViewCell
+        
+        let weatherObject = forecastData[indexPath.section]
+        
+        cell.myTextM?.text = weatherObject.summary
+        cell.myTextS?.text = "\(weatherObject.temperature) °F"
+        cell.myTextMinTemp.text = "\(weatherObject.temperatureMin) °F"
+        cell.myImage?.image = UIImage(named: weatherObject.icon)
+        
+
+        return cell
+       }
+    
+}
+

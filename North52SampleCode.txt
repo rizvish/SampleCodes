@@ -1,137 +1,98 @@
-/*Runs against transaction records grabbed via FetchXML to parse & populate fields and create openlane records*/ 
- 
- SmartFlow(    
-   
-        /*Setting Variables*/
-        SetVar('VehicleGUID', [new_transaction.new_vehicle]),
-        SetVar('LocationName', [new_transaction.new_locationname]),
-        SetVar('VIN', FindValue('new_vehicle', 'new_vehicleid', GetVar('VehicleGUID'), 'new_vin')),
-   	    SetVar('TransactionCreatedOn', [new_transaction.createdon]),
-   
-        SetVar('Month', GetMonth(GetVar('TransactionCreatedOn'))),  
-        SetVar('Day', GetDay(GetVar('TransactionCreatedOn'))), 																																		  		             
-        SetVar('Year', GetYear(GetVar('TransactionCreatedOn'))),
-        SetVar('TransactionCreatedOnFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + ToString(GetVar('Year'))),
-                               
-                    /*Queries FetchXML to find the grab the first record available by order ascending. Returns GUID of record if it exists for the query, else returns 'Not Found'*/                      
-					SetVar('TEGUID', FindValueFD('FetchXML', 'new_transactioneventid', 'Not Found', true, SetParams([new_transaction.new_transactionid]))),
-					
-					/*If record is found, then parse, populate, and create related OL records*/
-   					iftrue(ToString(GetVar('TEGUID')) != 'Not Found',
-                          SmartFlow(
-                            	        /*Parses and formats date values to as MM/DD/YYYY*/
-                            	         
-										SetVar('CompletedOrReconciled', FindValue('new_transactionevent', 'new_transactioneventid', GetVar('TEGUID'), 																										      								  
-										'new_lasteventstatusname'
-                                          								          )
-                                               ),
-                                      	if(GetVar('CompletedOrReconciled') = 'Reconciled' or
-                                           GetVar('CompletedOrReconciled') = 'Completed',
-                                          					SetVar('TE_SecuredDate', FindValue('new_transactionevent', 'new_transactioneventid', GetVar('TEGUID'), 																										      								   
-                                          					'new_lasteventstatuschangedate', 'No Date'
-                                          								                   )
-                                               					   ),
-                                          				    SetVar('TE_SecuredDate', 'No Date')
-                                           ),
+SmartFlow(
+  		
+          /*Instantiating Standard Equipment to the related field.
+           * Variable ‘end’ instantiated to be later used to find the index of pipe in Standard Equipment
+           */
+  	 SetVar('StandardEquipment', [new_vehicle.new_standardequipment]),
+  	 SetVar('end', '0'),
+  
+         /*Instantiating Optional Equipment to the related field.
+          *Variable ‘endOE’ instantiated to be later used to find the index of pipe in Optional Equipment 
+          */
+  	 SetVar('OptionalEquipment', [new_vehicle.new_optionalequipment] + '|END'),
+ 	 SetVar('endOE', '0'),
+  
+         /*FinalString will represent the concatenation of SE/OE and necessary HTML formatting for Windows Stickers
+          *Counter will increment at the start of a DoLoop to keep track of index of current loop. NOTE: Alternatively use DoLoopIndex()
+          */
+        SetVar('FinalString', ' '),
+  		SetVar('Counter', CInt64('1')),
+  
+  	iftrue(CountCharacters(GetVar('OptionalEquipment')) > 5,
+         SmartFlow(
 
-                                        iftrue(GetVar('TE_SecuredDate') != 'No Date',
-                                                                                      SetVar('Month', GetMonth(GetVar('TE_SecuredDate'))),  																																		 			      
-                                                                                      SetVar('Day', GetDay(GetVar('TE_SecuredDate'))), 																																		  			            
-                                                                                      SetVar('Year', GetYear(GetVar('TE_SecuredDate'))),
-                                                                                      SetVar('SecuredDateFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + 																																			   
-                                                                                      							  ToString(GetVar('Year'))
-                                                                                      		)
-                                                                                 ),
-                                         SetVar('TE_DispatchDate', FindValue('new_transactionevent', 'new_transactioneventid', GetVar('TEGUID'), 																												  							 
-                                          'new_dispatchdate', 'No Date'
-                                           									)
-                                               ),
-                                                                         iftrue(GetVar('TE_DispatchDate') != 'No Date',
-                                                                                       SetVar('Month', GetMonth(GetVar('TE_DispatchDate'))),  																																		 			      
-                                                                                        SetVar('Day', GetDay(GetVar('TE_DispatchDate'))), 																																		  			           
-                                                                                       SetVar('Year', GetYear(GetVar('TE_DispatchDate'))),
-                                                                                       SetVar('DispatchDateFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + 																																			   
-                                                                                       					            ToString(GetVar('Year'))
-                                                                           					 )
-                                                                                ),
-                                                                          if([new_transaction.new_statusglobalname] = 'Sold',
-                                                                            	SmartFlow(
-                                            											SetVar('SoldDate', GetDateOnly([new_transaction.new_sold])),
-                                                                                        SetVar('Month', GetMonth(GetVar('SoldDate'))),  																																		 			            
-                                                                                        SetVar('Day', GetDay(GetVar('SoldDate'))), 																																		  			                    
-                                                                                        SetVar('Year', GetYear(GetVar('SoldDate'))),
-                                                                                        SetVar('SoldDateFormat', ToString(GetVar('Month')) + '/' + ToString(GetVar('Day')) + '/' + 																																			     
-                                                                                       						     ToString(GetVar('Year'))
-                                                                                      		  )
-                                                                                      	   ),
-                                             									 SetVar('SoldDate', '')
-  											 								),     
-  											 								/*Queries for Openlane records. Ran against the current transaction record*/
-                                                                           SetVar('OLGUID', FindValue('new_openlaneinventory', SetFindAnd('new_transaction', 'new_vehicle'), 																																								   
-                                                                           SetFindAnd([new_transaction.new_transactionid], 																																											  
-                                                                           [new_transaction.new_vehicle]), 
-                                                                                        												  'new_openlaneinventoryid', 																																												 	  
-                                                                                        												  'Not Found')
-                                                                           		 ),
-                                                                           		 
-                                        /*If Openlane record DNE, then create it*/                                		 
-                            			iftrue(ToString(GetVar('OLGUID')) = 'Not Found', 
-                           					SmartFlow(
-   	                                 	 	    SetVar('OL_GUID', CreateRecord('new_openlaneinventory', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
-                                                                                                 	    SetAttribute('new_auction_id', '411755'), 
-                                                                                                  		SetAttribute('new_vin', GetVar('VIN')),                                          								      							 																   
-                                                                                                  		SetAttributeLookup('new_eventstatustype', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
-                                                                                               		    SetAttribute('new_location_city', GetVar('LocationName')),
-                                                                                                 	    SetAttribute('new_transaction', [new_transaction.new_transactionid]),
-                                                                                                 	    SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID')),
-                                            													  	    SetAttribute('new_vehicle_status', [new_transaction.new_statusglobalname]),
-                                            													 	    SetAttribute('new_date_record_was_created_in_onlane', GetVar('TransactionCreatedOnFormat')),
-                                                                                        		  		SetAttribute('new_assign_date', GetVar('TransactionCreatedOnFormat')),
-                                            													 		SetAttribute('new_consignment_received_or_updated', GetVar('TransactionCreatedOnFormat')),
-                                             													  		SetAttribute('new_secured_date', GetVar('SecuredDateFormat')),
-                                            													  		SetAttribute('new_date_shipped', GetVar('DispatchDateFormat')),
-                                            													  		SetAttribute('new_sold_date', GetVar('SoldDateFormat'))
-                                          										)
-                                          	    		),
-                                   
-                                          		SetVar('OL_Equipment', CreateRecord('new_openlaneequipment', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
-                                                                                                        	 SetAttribute('new_auction_id', '411755'),
-                                                                           									 SetAttribute('new_vin', GetVar('VIN')),
-                                                                                                       	     SetAttributeLookup('new_openlane_inventory', 'new_openlaneinventory', GetVar('OL_GUID')),
-                                                                                                  	    	 SetAttributeLookup('new_event_status_type', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
-                                            																 SetAttributeLookup('new_transaction', 'new_transaction', [new_transaction.new_transactionid]), 
-                                                                                                 	    	 SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID'))
-                                                                             		 )
-                                         				 ), 
-		
-                                          		SetVar('OL_Details', CreateRecord('new_openlanedetails', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
-                                                                                                         SetAttribute('new_auction_id', '411755'),
-                                                                            							 SetAttribute('new_vin', GetVar('VIN')),
-                                                                                                         SetAttributeLookup('new_openlane_inventory', 'new_openlaneinventory', GetVar('OL_GUID')),
-                                                                                                         SetAttributeLookup('new_event_status_type', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
-                                            															 SetAttributeLookup('new_transaction', 'new_transaction', [new_transaction.new_transactionid]),
-                                                                                                 	     SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID'))
-                                                                         		   )
-                                          				),
+       		/*DoLoop with condition of total times pipe | is found in Optional Equipment String*/
+  			DoLoop(CountCharacters(GetVar('OptionalEquipment'), '|'),
+          
+          		SmartFlow(
+                  	iftrue(GetVar('Counter') < 13,
+                  	SetVar('Counter', GetVar('Counter') + 1),
+                      	SetVar('StartOE', GetVar('endOE')),
+                      	SetVar('endOE', IndexOf(GetVar('OptionalEquipment'), '|', GetVar('endOE') + 1)),
+                      	
+                      	SetVar('BuildSE', Replace(Slice(GetVar('OptionalEquipment'), GetVar('StartOE'), GetVar('endOE')), '|', '</td> \r\n </tr> \r\n <tr> \r\n <td>*')),
+                      
+                      	SetVar('FinalString', GetVar('FinalString') + GetVar('BuildSE'))
+                  		  )
+                  		)
+          		     ),
+            	 /*Appending a second row to transition to next DoLoop to avoid writing on previous row*/
+  				 SetVar('FinalString', GetVar('FinalString') + '<tr> <td> *')
+           		    )
+  			   ),
+  
+  		/*DoLoop with condition of total times pipe | is found in Standard Equipment String*/
+  		DoLoop(CountCharacters(GetVar('StandardEquipment'), '|'),
+          
+                    SmartFlow(
+          				SetVar('Counter', GetVar('Counter') + 1),
+                      
+			/*check condition to avoid appending values after the 24th pipe that is found in Standard Equipment String*/
+                       iftrue(GetVar('Counter') < 51,    	
+                         
+                    	/*Keeps track of previous end value*/
+                  			SetVar('Start', GetVar('end')),
+                         
+                			/*Finds the index of next pipe and updates end variable with new index. 
+                       	    *end + 1 to avoid index value of pipe same as previous pipe*/
+                       		 SetVar('end', IndexOf(GetVar('StandardEquipment'), '|', GetVar('end') + 1)), 
+                    
+                  			/*Replace pipe with html tags based on current counter value*/
+                  			iftrue(GetVar('Counter') != 26 and GetVar('Counter') != 50, SetVar('BuildSE', Replace(Slice(GetVar('StandardEquipment'), GetVar('Start'), GetVar('end')), '|', '</td> \r\n </tr> \r\n <tr> \r\n <td>*'))
+                              	  ),
+                    
+                  			iftrue(GetVar('Counter') = 26, SetVar('BuildSE', Replace(Slice(GetVar('StandardEquipment'), GetVar('Start'), GetVar('end')), '|', '</td> \r\n </tr> \r\n </tbody> \r\n </table> \r\n </td> \r\n <td style="width: 395px; height: 700px";> \r\n <table> \r\n <tbody> \r\n <tr> \r\n <td>*'))
+                              	  ), 
+                    
+                            iftrue(GetVar('Counter') = 50, SetVar('BuildSE', Replace(Slice(GetVar('StandardEquipment'), GetVar('Start'), GetVar('end')), '|', '</td> \r\n </tr> \r\n </tbody> \r\n </table> \r\n </td> \r\n </tr> \r\n </tbody> \r\n </table> \r\n </body> \r\n </font> \r\n </html>'))
+                                  ), 
 
-                                          		SetVar('OL_PictureURL', CreateRecord('new_carlotz_pictureurl', SetAttribute('new_name', [new_transaction.new_clientunitnumber.Client Unit Number]),
-                                                                                                    	       SetAttribute('new_auction_id', '411755'),
-                                                                            								   SetAttribute('new_vin', GetVar('VIN')),
-                                                                                                        	   SetAttributeLookup('new_open_lane_inventory', 'new_openlaneinventory', GetVar('OL_GUID')),
-                                                                                                       		   SetAttributeLookup('new_event_status_type', 'new_eventstatus', 'AB41F82E-DC05-E811-810D-5065F38B8481'),
-                                           																	   SetAttributeLookup('new_transaction', 'new_transaction', [new_transaction.new_transactionid]),
-                                                                                                    		   SetAttributeLookup('new_vehicle', 'new_vehicle', GetVar('VehicleGUID'))
-                                                                                     )  	
-                                            
-												  	), 
-                                   
-                                       		    UpdateRecord('new_openlaneinventory', GetVar('OL_GUID'), SetAttributeLookup('new_openlane_equipment', 'new_openlaneequipment', GetVar('OL_Equipment')), 
-                                                                                                 		 SetAttributeLookup('new_openlane_details', 'new_openlanedetails', GetVar('OL_Details')), 
-                                                                                               		     SetAttributeLookup('new_picture_url', 'new_carlotz_pictureurl', GetVar('OL_PictureURL'))/*,
-                                          											            		 SetAttribute('new_triggerreason', '100000001') SYNC Transaction*/
-                         	 								)
-                                                   )
-                                              )
-                                         )
-                                  	)
-          )
+                          	SetVar('FinalString', GetVar('FinalString') + GetVar('BuildSE'))
+							)
+                  		    )    					
+  				),
+  
+  		/*Instansiate FinishedWindowsSticker to concatenate HTML tags and FinalString found above*/
+  		SetVar('FinishedWindowsSticker', '<!DOCTYPE html>' + '\r\n' +
+          									 '<html>' + '\r\n' +
+          									 '<head>' + '\r\n' +
+          									 '<style>' + '\r\n' +
+          									 '*{ margin: 0cm; padding: 0cm; vertical-align:top; }' + '\r\n' +
+                         					 '</style>' + '\r\n' +
+          									 '</head>' + '\r\n' +
+          									 '<body>' + '\r\n' +
+          									 '<font size="1" face="calibri">' + '\r\n' +
+          									 '<table style="width: 395px; height: 700px; vertical-align: top;">' + '\r\n' +
+          									 '<tbody valign="top">' + '\r\n' +
+          									 '<tr>' + '\r\n' +
+          									 '<td style="width: 395px; height: 700px;">' + '\r\n' +
+          									 '<table>' + '\r\n'+
+          									 '<tbody>' + '\r\n' +
+         									 '<tr>' + '\r\n' +
+          									 '<td>*' + GetVar('FinalString')
+  				),
+  
+  		/*Updates html_standardequipment with all necessary html tags*/
+  		UpdateRecord('new_vehicle', [new_vehicle.new_vehicleid], SetAttribute('new_windowsstickerequipment', GetVar('FinishedWindowsSticker')))
+ 		
+		 )

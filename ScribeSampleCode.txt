@@ -1,0 +1,68 @@
+CONCATENATE
+(
+ElementAssignment.PU_ADDR1,
+" ",
+IF(
+      COMPARE(
+                        TRIM(
+                                    MID(
+                                            ElementAssignment.PU_ADDR2, 
+                                             1, 
+                                             IF(FIND(ElementAssignment.PU_ADDR2, "     ") = 0, 
+                                                  LEN(ElementAssignment.PU_ADDR2),
+                                                  FIND(ElementAssignment.PU_ADDR2, "     ")
+                                                 )
+                                          )
+                              ), 
+                          TRIM(
+                                    MID(
+                                            ElementAssignment.PU_ADDR2, 
+                                            IF(FIND( ElementAssignment.PU_ADDR2, "     ") = 0, 1, FIND( ElementAssignment.PU_ADDR2, "     ")), 
+                                            1 + LEN(ElementAssignment.PU_ADDR2) - LEN(
+                                                                                                                            MID(
+                                                                                                                                         ElementAssignment.PU_ADDR2, 
+                                                                                                                                         1, 
+                                                                                                                                         IF(FIND(ElementAssignment.PU_ADDR2, "     ") = 0, 
+                                                                                                                                                  1,
+                                                                                                                                                  FIND(ElementAssignment.PU_ADDR2, "     ")
+                                                                                                                                                )
+                                                                                                                                         )
+                                                                                                                              )
+                                                     )
+                               ), 
+                              True
+                              ) = 0,
+                                           TRIM(MID(ElementAssignment.PU_ADDR2, 1, IF(FIND(ElementAssignment.PU_ADDR2, "     ") = 0, LEN(ElementAssignment.PU_ADDR2), FIND(ElementAssignment.PU_ADDR2, "     ")))),
+                                           IF(
+                                                 FIND(
+                                                             TRIM(
+                                                                         MID(
+                                                                                  ElementAssignment.PU_ADDR2, 
+                                                                                  FIND(
+                                                                                              ElementAssignment.PU_ADDR2, 
+                                                                                               "     "
+                                                                                   ), 
+                                                                                  1 + LEN(ElementAssignment.PU_ADDR2) - LEN(
+                                                                                                                                                                         MID(
+                                                                                                                                                                                    ElementAssignment.PU_ADDR2, 
+                                                                                                                                                                                     1, 
+                                                                                                                                                                                     FIND(
+                                                                                                                                                                                                ElementAssignment.PU_ADDR2, 
+                                                                                                                                                                                                  "     "
+                                                                                                                                                                                                  )
+                                                                                                                                                                                  )
+                                                                                                                                                                          )
+                                                                                    )
+                                                                           ),
+                                                                    "_____"
+                                                                    ) != 0,
+                                                               TRIM(MID(ElementAssignment.PU_ADDR2,
+                                                                        1, 
+                                                                        FIND(ElementAssignment.PU_ADDR2, "     ")
+                                                                        )
+                                                                    ),
+                                                               ElementAssignment.PU_ADDR2
+                                                         )
+      )
+)
+
